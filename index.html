@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Poppy Playtime 5: Factory Escape</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <style>
+        body { margin: 0; overflow: hidden; background: #050505; font-family: 'Courier New', Courier, monospace; }
+        #ui { position: absolute; top: 10px; left: 10px; color: #ff0000; text-shadow: 2px 2px #000; z-index: 10; display: none; }
+        #stamina-bar { width: 150px; height: 10px; background: #330000; border: 1px solid #ff0000; margin-top: 5px; }
+        #stamina-fill { width: 100%; height: 100%; background: #ff0000; }
+        
+        .controls { position: absolute; bottom: 20px; width: 100%; display: flex; justify-content: space-between; padding: 0 20px; box-sizing: border-box; z-index: 20; display: none; pointer-events: none; }
+        .btn { width: 80px; height: 80px; background: rgba(255, 0, 0, 0.2); border: 2px solid #ff0000; border-radius: 50%; display: flex; align-items: center; justify-content: center; pointer-events: auto; font-weight: bold; color: white; user-select: none; }
+        #joy { width: 110px; height: 110px; background: rgba(0, 0, 255, 0.1); border-radius: 50%; border: 3px solid #0000ff; pointer-events: auto; }
+        
+        #cam-zone { position: absolute; top: 0; right: 0; width: 60%; height: 60%; z-index: 5; pointer-events: auto; }
+        #menu { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #1a1a1a; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; text-align: center; color: white; border: 10px double #ff0000; box-sizing: border-box; }
+        .play-btn { padding: 20px 40px; background: #ff0000; color: white; border: none; border-radius: 5px; font-size: 24px; font-weight: bold; cursor: pointer; box-shadow: 0 0 15px #ff0000; }
+    </style>
+</head>
+<body>
+
+<div id="menu">
+    <h1 style="color:#ff0000; font-size: 40px; margin-bottom: 0;">POPPY PLAYTIME 5</h1>
+    <p style="margin-bottom: 30px;">LA FÁBRICA HA SIDO ABANDONADA...</p>
+    <button class="play-btn" onclick="start()">ENTRAR A LA FÁBRICA</button>
+</div>
+
+<div id="cam-zone"></div>
+
+<div id="ui">
+    <h3 style="margin:0">JUGUETES RECOGIDOS: <span id="score">0</span> / 10</h3>
+    <div id="stamina-bar"><div id="stamina-fill"></div></div>
+</div>
+
+<div class="controls" id="game-controls">
+    <div id="joy"></div>
+    <div style="display:flex; gap: 15px;">
+        <div class="btn" id="run">SHIFT</div>
+        <div class="btn" id="jump">SALTAR</div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+
+<script>
+    let scene, camera, renderer, player, clock;
+    let toys = [], score = 0, stamina = 100;
+    let isRunning = false, yVel = 0, moveX = 0, moveZ = 0;
+    let camRotation = 0, lastTouchX = 0;
+
+    function start() {
+        document.getElementById('menu').style.display = 'none';
+        document.getElementById('ui').style.display = 'block';
+        document.getElementById('game-controls').style.display = 'flex';
+        init();
+    }
+
+    function init() {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x050505);
+        scene.fog = new THREE.Fog(0x050505, 5, 35); // Niebla para terror
+        
+        camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        clock = new THREE.Clock();
+
+        renderer = new THREE.WebGLRenderer({ antialias: false });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Luz de linterna (débil)
+        const light = new THREE.PointLight(0xffffff, 1, 30);
+        light.position.set(0, 2, 0);
+        player = new THREE.Group();
+        player.add(light);
+        
+        // El Jugador (Mano de GrabPack Azul)
+        const hand = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.8, 0.6), new THREE.MeshBasicMaterial({ color: 0x0000ff }));
+        hand.position.y = 0.9;
+        player.add(hand);
+        scene.add(player);
+
+        // Suelo metálico oxidado
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshBasicMaterial({ color: 0x111111 }));
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
+
+        // Muros de la fábrica (Oscuros y altos)
+        const wallMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
+        function addWall(w, h, d, x, z) {
+            const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+            m.position.set(x, h/2, z);
+            scene.add(m);
+        }
+        addWall(80, 12, 2, 0, -40); addWall(80, 12, 2, 0, 40);
+        addWall(2, 12, 80, -40, 0); addWall(2, 12, 80, 40, 0);
+        addWall(25, 12, 2, -15, 5); addWall(2, 12, 25, 5, -15); // Pasillos
+
+        // Juguetes "Poseídos" que escapan
+        for(let i=0; i<10; i++) {
+            const t = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.7), new THREE.MeshBasicMaterial({ color: 0xffff00 }));
+            t.position.set((Math.random()-0.5)*60, 0.5, (Math.random()-0.5)*60);
+            scene.add(t);
+            toys.push(t);
+        }
+
+        // Controles de Cámara
+        const camZone = document.getElementById('cam-zone');
+        camZone.ontouchstart = (e) => { lastTouchX = e.touches[0].clientX; };
+        camZone.ontouchmove = (e) => {
+            let deltaX = e.touches[0].clientX - lastTouchX;
+            camRotation -= deltaX * 0.008;
+            lastTouchX = e.touches[0].clientX;
+        };
+
+        const joy = document.getElementById('joy');
+        joy.ontouchmove = (e) => {
+            const r = joy.getBoundingClientRect();
+            moveX = (e.touches[0].clientX - (r.left + r.width/2)) / 30;
+            moveZ = (e.touches[0].clientY - (r.top + r.height/2)) / 30;
+        };
+        joy.ontouchend = () => { moveX = 0; moveZ = 0; };
+
+        document.getElementById('run').ontouchstart = () => isRunning = true;
+        document.getElementById('run').ontouchend = () => isRunning = false;
+        document.getElementById('jump').ontouchstart = () => { if(player.position.y <= 0.1) yVel = 0.3; };
+
+        animate();
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+        let speed = (isRunning && stamina > 0) ? 0.45 : 0.25;
+        if(isRunning && stamina > 0) stamina -= 0.8; else if(stamina < 100) stamina += 0.4;
+        document.getElementById('stamina-fill').style.width = stamina + "%";
+
+        let forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), camRotation);
+        let right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), camRotation);
+        
+        player.position.addScaledVector(forward, -moveZ * speed);
+        player.position.addScaledVector(right, moveX * speed);
+
+        player.position.y += yVel;
+        if(player.position.y > 0) yVel -= 0.02; else { player.position.y = 0; yVel = 0; }
+
+        // IA: Los juguetes se alejan si te acercas
+        toys.forEach((t, i) => {
+            let dist = player.position.distanceTo(t.position);
+            if(dist < 7) {
+                let dir = new THREE.Vector3().subVectors(t.position, player.position).normalize();
+                t.position.addScaledVector(dir, 0.12);
+                t.rotation.y += 0.2; // Giran rápido cuando escapan
+            }
+            if(dist < 1.5) {
+                scene.remove(t);
+                toys.splice(i, 1);
+                score++;
+                document.getElementById('score').innerText = score;
+            }
+        });
+
+        let camOffset = new THREE.Vector3(0, 10, 15).applyAxisAngle(new THREE.Vector3(0, 1, 0), camRotation);
+        camera.position.copy(player.position).add(camOffset);
+        camera.lookAt(player.position);
+
+        renderer.render(scene, camera);
+    }
+</script>
+</body>
+</html>
