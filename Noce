@@ -1,0 +1,14 @@
+-- Efecto de vibración en las flechas para aumentar la dificultad
+function onUpdate(elapsed)
+    for i = 0, 7 do
+        setPropertyFromGroup('strumLineNotes', i, 'x', getPropertyFromGroup('strumLineNotes', i, 'x') + math.random(-1, 1))
+        setPropertyFromGroup('strumLineNotes', i, 'y', getPropertyFromGroup('strumLineNotes', i, 'y') + math.random(-1, 1))
+    end
+end
+
+function onStepHit()
+    -- Cada 16 pasos, un pequeño glitch visual en la cámara
+    if curStep % 16 == 0 then
+        triggerEvent('Add Camera Zoom', 0.05, 0.05)
+    end
+end
